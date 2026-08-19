@@ -1,15 +1,16 @@
 FROM node:18-slim
 
-# Step 1: Install system dependencies (python3, pip, ffmpeg)
+# Install system dependencies (python3, ffmpeg, and curl)
 RUN apt-get update && apt-get install -y \
     python3 \
-    python3-pip \
     ffmpeg \
+    curl \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Step 2: Install yt-dlp separately with a retry flag to avoid network timeouts
-RUN pip3 install yt-dlp --retries 5
+# Download and install yt-dlp directly from GitHub (bypasses pip network issues)
+RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp \
+    && chmod a+rx /usr/local/bin/yt-dlp
 
 # Set the working directory inside the container
 WORKDIR /usr/src/app
