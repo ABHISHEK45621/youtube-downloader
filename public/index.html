@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Downloader</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{font-family:Arial,sans-serif;background:#0a0e17;color:#e8edf5;min-height:100vh;display:flex;justify-content:center;align-items:center;padding:20px}
+        .container{max-width:650px;width:100%;background:#141b26;border-radius:20px;padding:40px;box-shadow:0 20px 60px rgba(0,0,0,0.8);border:1px solid #1f2a36}
+        h1{display:flex;align-items:center;gap:12px;font-size:28px;margin-bottom:30px}
+        h1 i{color:#ff0033;font-size:30px}
+        .url-section{display:flex;gap:10px;margin-bottom:10px}
+        .url-section input{flex:1;padding:14px 18px;background:#0d1420;border:2px solid #1f2a36;border-radius:12px;color:#e8edf5;font-size:15px;outline:none}
+        .url-section input:focus{border-color:#ff0033}
+        .url-section button{padding:14px 28px;background:#ff0033;border:none;border-radius:12px;color:#fff;font-weight:600;cursor:pointer}
+        .url-section button:hover{background:#cc0028}
+        .url-section button:disabled{opacity:0.5;cursor:not-allowed}
+        .hint{min-height:30px;font-size:14px;color:#5a6f8a;margin:8px 0 20px}
+        .hint.error{color:#ff0033}
+        .hint.success{color:#00cc66}
+        .preview{display:none;background:#0d1420;border-radius:12px;padding:16px;margin-bottom:20px;border:1px solid #1f2a36;gap:16px;align-items:center}
+        .preview.visible{display:flex}
+        .preview img{width:120px;height:68px;border-radius:8px;object-fit:cover}
+        .preview .info{flex:1;min-width:0}
+        .preview .info .title{font-weight:600;font-size:15px;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+        .preview .info .meta{font-size:13px;color:#5a6f8a}
+        .preview .info .meta span{margin-right:15px}
+        .formats{display:none;margin-bottom:20px}
+        .formats.visible{display:block}
+        .formats label{display:block;font-size:13px;font-weight:600;color:#5a6f8a;margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px}
+        .radio-group{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:15px}
+        .radio-group label{display:flex;align-items:center;gap:8px;padding:10px 18px;background:#0d1420;border:2px solid #1f2a36;border-radius:10px;cursor:pointer;font-size:14px;font-weight:500;color:#8aa0bc}
+        .radio-group input[type=radio]{display:none}
+        .radio-group input[type=radio]:checked+label{border-color:#ff0033;background:rgba(255,0,51,.1);color:#fff}
+        .radio-group label:hover{border-color:#5a6f8a}
+        .quality-wrap{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+        .quality-wrap select{padding:10px 16px;background:#0d1420;border:2px solid #1f2a36;border-radius:10px;color:#e8edf5;font-size:14px;outline:none;cursor:pointer;min-width:140px}
+        .quality-wrap select:focus{border-color:#ff0033}
+        .quality-wrap .badge{background:#1f2a36;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:600;color:#8aa0bc}
+        .download-section{display:none;margin-top:20px}
+        .download-section.visible{display:block}
+        .download-section button{width:100%;padding:16px;background:#00cc66;border:none;border-radius:12px;color:#fff;font-weight:700;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px}
+        .download-section button:hover:not(:disabled){background:#00b358;transform:scale(1.01)}
+        .download-section button:disabled{opacity:0.5;cursor:not-allowed}
+        .progress-wrap{display:none;margin-top:16px}
+        .progress-wrap.visible{display:block}
+        .progress-bar{width:100%;height:6px;background:#0d1420;border-radius:10px;overflow:hidden}
+        .progress-bar .fill{height:100%;width:0%;background:linear-gradient(90deg,#ff0033,#ff6600);border-radius:10px;transition:width .3s}
+        .progress-info{display:flex;justify-content:space-between;font-size:13px;color:#5a6f8a;margin-top:6px}
+        .progress-info .percent{color:#e8edf5;font-weight:600}
+        .toast{position:fixed;bottom:30px;left:50%;transform:translateX(-50%) translateY(100px);background:#141b26;border:1px solid #ff0033;border-radius:12px;padding:14px 28px;display:flex;align-items:center;gap:14px;opacity:0;transition:all .4s;pointer-events:none;z-index:1000}
+        .toast.visible{opacity:1;transform:translateX(-50%) translateY(0);pointer-events:auto}
+        .toast i{color:#ff0033;font-size:20px}
+        .toast .close{cursor:pointer;color:#5a6f8a;margin-left:10px}
+        .toast .close:hover{color:#fff}
+        @media(max-width:600px){.container{padding:20px}.url-section{flex-direction:column}.url-section button{width:100%;justify-content:center}.preview{flex-direction:column;align-items:stretch}.preview img{width:100%;height:140px}.radio-group{flex-direction:column}.quality-wrap{flex-direction:column;align-items:stretch}.quality-wrap select{width:100%}}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1><i class="fas fa-download"></i> YouTube Downloader</h1>
+        <div class="url-section">
+            <input type="text" id="urlInput" placeholder="Paste YouTube URL here...">
+            <button id="fetchBtn"><i class="fas fa-search"></i> Fetch</button>
+        </div>
+        <div class="hint" id="hint">
+            <i class="fas fa-info-circle"></i>
+            <span>Paste a YouTube URL and click Fetch</span>
+        </div>
+        <div class="preview" id="preview">
+            <img id="thumbnail" src="" alt="Thumbnail">
+            <div class="info">
+                <div class="title" id="videoTitle">Video Title</div>
+                <div class="meta">
+                    <span><i class="fas fa-user"></i> <span id="channelName">Channel</span></span>
+                    <span><i class="fas fa-clock"></i> <span id="duration">--:--</span></span>
+                    <span><i class="fas fa-eye"></i> <span id="views">--</span></span>
+                </div>
+            </div>
+        </div>
+        <div class="formats" id="formats">
+            <label>Download Type</label>
+            <div class="radio-group">
+                <input type="radio" name="mode" id="modeAudio" value="audio">
+                <label for="modeAudio"><i class="fas fa-music"></i> Audio</label>
+                <input type="radio" name="mode" id="modeVideo" value="video">
+                <label for="modeVideo"><i class="fas fa-film"></i> Video Only</label>
+                <input type="radio" name="mode" id="modeFull" value="full" checked>
+                <label for="modeFull"><i class="fas fa-play"></i> Full Video</label>
+            </div>
+            <div class="quality-wrap">
+                <select id="qualitySelect"></select>
+                <span class="badge" id="formatBadge">MP4</span>
+            </div>
+        </div>
+        <div class="download-section" id="downloadSection">
+            <button id="downloadBtn">
+                <i class="fas fa-arrow-down"></i> Download
+            </button>
+            <div class="progress-wrap" id="progressWrap">
+                <div class="progress-bar">
+                    <div class="fill" id="progressFill"></div>
+                </div>
+                <div class="progress-info">
+                    <span id="progressStatus">Preparing...</span>
+                    <span class="percent" id="progressPercent">0%</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="toast" id="toast">
+        <i class="fas fa-circle-exclamation"></i>
+        <span id="toastMsg">Error message</span>
+        <span class="close" id="toastClose"><i class="fas fa-xmark"></i></span>
+    </div>
+    <script>
+        const urlInput=document.getElementById('urlInput'),fetchBtn=document.getElementById('fetchBtn'),hint=document.getElementById('hint'),preview=document.getElementById('preview'),thumbnail=document.getElementById('thumbnail'),videoTitle=document.getElementById('videoTitle'),channelName=document.getElementById('channelName'),duration=document.getElementById('duration'),views=document.getElementById('views'),formats=document.getElementById('formats'),qualitySelect=document.getElementById('qualitySelect'),formatBadge=document.getElementById('formatBadge'),downloadSection=document.getElementById('downloadSection'),downloadBtn=document.getElementById('downloadBtn'),progressWrap=document.getElementById('progressWrap'),progressFill=document.getElementById('progressFill'),progressStatus=document.getElementById('progressStatus'),progressPercent=document.getElementById('progressPercent'),toast=document.getElementById('toast'),toastMsg=document.getElementById('toastMsg'),toastClose=document.getElementById('toastClose');
+        let videoData=null,isFetching=!1,isDownloading=!1;
+        const qualityOptions={audio:[{label:'MP3 320 kbps',value:'mp3-320'},{label:'MP3 256 kbps',value:'mp3-256'},{label:'MP3 192 kbps',value:'mp3-192'},{label:'M4A 256 kbps',value:'m4a-256'},{label:'M4A 128 kbps',value:'m4a-128'},{label:'AAC 320 kbps',value:'aac-320'},{label:'AAC 256 kbps',value:'aac-256'}],video:[{label:'4K (2160p)',value:'2160'},{label:'1440p (2K)',value:'1440'},{label:'1080p (Full HD)',value:'1080'},{label:'720p (HD)',value:'720'},{label:'480p',value:'480'},{label:'360p',value:'360'}],full:[{label:'4K (2160p)',value:'2160'},{label:'1440p (2K)',value:'1440'},{label:'1080p (Full HD)',value:'1080'},{label:'720p (HD)',value:'720'},{label:'480p',value:'480'},{label:'360p',value:'360'}]};
+        function formatDuration(seconds){if(!seconds)return'--:--';const m=Math.floor(seconds/60),s=Math.floor(seconds%60);if(m>=60){const h=Math.floor(m/60);return h+':'+String(m%60).padStart(2,'0')+':'+String(s).padStart(2,'0')}return m+':'+String(s).padStart(2,'0')}
+        function formatViews(count){if(!count)return'--';if(count>=1e6)return(count/1e6).toFixed(1)+'M';if(count>=1e3)return(count/1e3).toFixed(1)+'K';return String(count)}
+        function showToast(message,isError=!0){toastMsg.textContent=message;toast.querySelector('i').className=isError?'fas fa-circle-exclamation':'fas fa-circle-check';toast.style.borderColor=isError?'#ff0033':'#00cc66';toast.querySelector('i').style.color=isError?'#ff0033':'#00cc66';toast.classList.add('visible');clearTimeout(toast._hide);toast._hide=setTimeout(()=>toast.classList.remove('visible'),5e3)}
+        function hideToast(){toast.classList.remove('visible')}
+        toastClose.addEventListener('click',hideToast);
+        function setHint(message,type='info'){const icons={info:'fa-info-circle',error:'fa-circle-exclamation',success:'fa-check-circle',loading:'fa-spinner fa-spin'};hint.className='hint '+type;hint.innerHTML='<i class="fas '+icons[type]+'"></i><span>'+message+'</span>'}
+        function populateQuality(mode){const options=qualityOptions[mode]||qualityOptions.full;qualitySelect.innerHTML='';options.forEach(opt=>{const option=document.createElement('option');option.value=opt.value;option.textContent=opt.label;qualitySelect.appendChild(option)});const first=options[0];formatBadge.textContent=mode==='audio'?first.value.split('-')[0].toUpperCase():'MP4'}
+        async function handleFetch(){const url=urlInput.value.trim();if(!url){setHint('Please paste a YouTube URL','error');return}if(!url.includes('youtube.com')&&!url.includes('youtu.be')){setHint('Please enter a valid YouTube URL','error');return}setHint('Fetching video information...','loading');fetchBtn.disabled=!0;isFetching=!0;preview.classList.remove('visible');formats.classList.remove('visible');downloadSection.classList.remove('visible');progressWrap.classList.remove('visible');try{const response=await fetch('/api/info',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url})});const data=await response.json();if(!response.ok)throw new Error(data.error||'Failed to fetch video info');videoData=data;thumbnail.src=data.thumbnail||'';videoTitle.textContent=data.title||'Untitled';channelName.textContent=data.channel||'Unknown';duration.textContent=formatDuration(data.duration);views.textContent=formatViews(data.views);preview.classList.add('visible');formats.classList.add('visible');downloadSection.classList.add('visible');document.getElementById('modeFull').checked=!0;populateQuality('full');setHint('✅ Ready to download!','success');showToast('Video info loaded successfully!',!1)}catch(error){console.error('Error:',error);setHint('❌ '+error.message,'error');showToast(error.message)}finally{fetchBtn.disabled=!1;isFetching=!1}}
+        document.querySelectorAll('input[name="mode"]').forEach(el=>{el.addEventListener('change',function(){const mode=this.value;populateQuality(mode);progressWrap.classList.remove('visible');progressFill.style.width='0%'})});
+        qualitySelect.addEventListener('change',function(){const mode=document.querySelector('input[name="mode"]:checked')?.value||'full';const options=qualityOptions[mode]||qualityOptions.full;const selected=options.find(o=>o.value===this.value);if(selected){formatBadge.textContent=mode==='audio'?selected.value.split('-')[0].toUpperCase():'MP4'}});
+        async function handleDownload(){if(!videoData){showToast('Please fetch video info first');return}if(isDownloading)return;const url=urlInput.value.trim(),mode=document.querySelector('input[name="mode"]:checked')?.value||'full',quality=qualitySelect.value;isDownloading=!0;downloadBtn.disabled=!0;progressWrap.classList.add('visible');progressFill.style.width='0%';progressStatus.textContent='Starting download...';progressPercent.textContent='0%';try{const response=await fetch('/api/download',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url,mode,quality})});if(!response.ok){const error=await response.json();throw new Error(error.error||'Download failed')}const blob=await response.blob();const contentDisposition=response.headers.get('content-disposition');let filename='download.'+(mode==='audio'?'mp3':'mp4');if(contentDisposition){const match=contentDisposition.match(/filename="?(.+)"?/);if(match)filename=match[1]}let progress=0;const interval=setInterval(()=>{progress+=5;if(progress>95){clearInterval(interval);progress=95}progressFill.style.width=progress+'%';progressPercent.textContent=progress+'%';progressStatus.textContent='Downloading... '+progress+'%'},200);const urlObj=URL.createObjectURL(blob);const a=document.createElement('a');a.href=urlObj;a.download=filename;document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(urlObj);clearInterval(interval);progressFill.style.width='100%';progressPercent.textContent='100%';progressStatus.textContent='✅ Download complete!';showToast('Download complete!',!1)}catch(error){console.error('Download error:',error);showToast(error.message||'Download failed');progressStatus.textContent='❌ Download failed'}finally{isDownloading=!1;downloadBtn.disabled=!1}}
+        fetchBtn.addEventListener('click',handleFetch);downloadBtn.addEventListener('click',handleDownload);urlInput.addEventListener('keydown',(e)=>{if(e.key==='Enter')handleFetch()});setHint('Paste a YouTube URL and click Fetch','info');populateQuality('full');console.log('🚀 YouTube Downloader ready!');
+    </script>
+</body>
+</html>
