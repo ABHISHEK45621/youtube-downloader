@@ -1,12 +1,12 @@
-FROM node:18-slim
+FROM node:18-alpine
 
 # Install Python, pip, ffmpeg, and yt-dlp
-RUN apt-get update && apt-get install -y \
+RUN apk add --no-cache \
     python3 \
-    python3-pip \
+    py3-pip \
     ffmpeg \
-    && pip3 install yt-dlp \
-    && apt-get clean
+    && pip3 install --upgrade pip \
+    && pip3 install yt-dlp
 
 WORKDIR /usr/src/app
 
