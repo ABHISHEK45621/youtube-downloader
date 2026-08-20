@@ -11,14 +11,27 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
-console.log('🚀 Starting YouTube Downloader with ytagent...');
+console.log('🚀 Starting YouTube Downloader...');
 
-// ─── Helper: Run ytagent command ───
+// ─── Helper: Run command with PO Token support ───
 function runCommand(command) {
     return new Promise((resolve, reject) => {
-        console.log('▶️ Running:', command);
+        // Add PO Token provider if available
+        const potProviderPath = '/pot-provider/server/dist/index.js';
+        let fullCommand = command;
         
-        exec(command, { 
+        // Check if PO Token provider exists
+        if (fs.existsSync(potProviderPath)) {
+            fullCommand = command.replace(
+                'yt-dlp',
+                `yt-dlp --po-token-provider "node ${potProviderPath}"`
+            );
+            console.log('✅ Using PO Token provider');
+        }
+        
+        console.log('▶️ Running:', fullCommand);
+        
+        exec(fullCommand, { 
             maxBuffer: 1024 * 1024 * 50, 
             timeout: 180000 
         }, (error, stdout, stderr) => {
@@ -36,96 +49,6 @@ function runCommand(command) {
     });
 }
 
-// ─── Helper: Get video info using ytagent ───
-async function getVideoInfo(url) {
-    try {
-        // First try with ytagent
-        console.log('📥 Using ytagent to fetch info...');
-        const command = `ytagent download "${url}" --format json --quality best`;
-        const output = await runCommand(command);
-        
-        // Parse the JSON output
-        const data = JSON.parse(output);
-        console.log('✅ Video found via ytagent:', data.title);
-        
-        return {
-            id: data.id || data.video_id,
-            title: data.title || 'Untitled',
-            channel: data.uploader || data.channel || 'Unknown',
-            duration: data.duration || 0,
-            views: data.view_count || 0,
-            thumbnail: data.thumbnail || '',
-            formats: data.formats || []
-        };
-    } catch (error) {
-        console.error('❌ ytagent failed:', error.message);
-        
-        // Fallback: Try with yt-dlp (if available)
-        console.log('🔄 Falling back to yt-dlp...');
-        try {
-            const command = `yt-dlp -j --no-warnings "${url}"`;
-            const output = await runCommand(command);
-            const data = JSON.parse(output);
-            
-            return {
-                id: data.id,
-                title: data.title || 'Untitled',
-                channel: data.uploader || data.channel || 'Unknown',
-                duration: data.duration || 0,
-                views: data.view_count || 0,
-                thumbnail: data.thumbnail || '',
-                formats: data.formats || []
-            };
-        } catch (fallbackError) {
-            console.error('❌ Both methods failed');
-            throw new Error('Could not fetch video info. Please try again.');
-        }
-    }
-}
-
-// ─── Helper: Download video using ytagent ───
-async function downloadVideo(url, mode, quality) {
-    const tempId = Date.now();
-    let extension = 'mp4';
-    let filename = `video_${tempId}`;
-    let formatOption = '';
-    
-    if (mode === 'audio') {
-        extension = quality.split('-')[0] || 'mp3';
-        filename = `audio_${tempId}`;
-        formatOption = '--audio-only --audio-format ' + extension;
-    } else if (mode === 'video') {
-        const height = parseInt(quality);
-        if (isNaN(height)) throw new Error('Invalid quality value');
-        formatOption = `--quality ${quality}p --video-only`;
-        filename = `video_${tempId}`;
-    } else {
-        const height = parseInt(quality);
-        if (isNaN(height)) throw new Error('Invalid quality value');
-        formatOption = `--quality ${quality}p`;
-        filename = `full_${tempId}`;
-    }
-    
-    const outputFile = path.join(__dirname, 'downloads', `${filename}.${extension}`);
-    
-    if (!fs.existsSync('downloads')) {
-        fs.mkdirSync('downloads');
-    }
-    
-    // Build ytagent command
-    const command = `ytagent download "${url}" --output "${outputFile}" ${formatOption}`;
-    console.log('▶️ Download command:', command);
-    
-    await runCommand(command);
-    
-    // Check if file exists
-    if (!fs.existsSync(outputFile)) {
-        throw new Error('Downloaded file not found');
-    }
-    
-    return outputFile;
-}
-
 // ─── API: Get Video Info ───
 app.post('/api/info', async (req, res) => {
     try {
@@ -135,8 +58,44 @@ app.post('/api/info', async (req, res) => {
         }
         
         console.log('📥 Fetching URL:', url);
-        const videoInfo = await getVideoInfo(url);
-        res.json(videoInfo);
+        
+        // Try with PO Token first
+        try {
+            const output = await runCommand(`yt-dlp -j --no-warnings "${url}"`);
+            const data = JSON.parse(output);
+            
+            console.log('✅ Video found:', data.title);
+            res.json({
+                id: data.id,
+                title: data.title || 'Untitled',
+                channel: data.uploader || 'Unknown',
+                duration: data.duration || 0,
+                views: data.view_count || 0,
+                thumbnail: data.thumbnail || '',
+            });
+            return;
+        } catch (poError) {
+            console.log('⚠️ PO Token failed, trying without...');
+        }
+        
+        // Fallback: Try without PO Token
+        try {
+            const output = await runCommand(`yt-dlp --extractor-args "youtube:player_client=android" -j --no-warnings "${url}"`);
+            const data = JSON.parse(output);
+            
+            console.log('✅ Video found (fallback):', data.title);
+            res.json({
+                id: data.id,
+                title: data.title || 'Untitled',
+                channel: data.uploader || 'Unknown',
+                duration: data.duration || 0,
+                views: data.view_count || 0,
+                thumbnail: data.thumbnail || '',
+            });
+        } catch (fallbackError) {
+            console.error('❌ All methods failed');
+            throw new Error('Could not fetch video info. YouTube may be blocking this server.');
+        }
         
     } catch (error) {
         console.error('❌ Error details:', error.message);
@@ -156,24 +115,103 @@ app.post('/api/download', async (req, res) => {
         
         console.log(`📥 Downloading: ${mode} | Quality: ${quality}`);
         
-        const outputFile = await downloadVideo(url, mode, quality);
-        const stat = fs.statSync(outputFile);
+        let formatSelector = '';
+        let extension = 'mp4';
+        let filename = 'video';
         
-        // Get filename
-        const filename = path.basename(outputFile);
+        if (mode === 'audio') {
+            const bitrateMap = {
+                'mp3-320': 'bestaudio[ext=mp3]/bestaudio[abr>=320]',
+                'mp3-256': 'bestaudio[ext=mp3]/bestaudio[abr>=256]',
+                'mp3-192': 'bestaudio[ext=mp3]/bestaudio[abr>=192]',
+                'm4a-256': 'bestaudio[ext=m4a]/bestaudio[abr>=256]',
+                'm4a-128': 'bestaudio[ext=m4a]/bestaudio[abr>=128]',
+                'aac-320': 'bestaudio[ext=aac]/bestaudio[abr>=320]',
+                'aac-256': 'bestaudio[ext=aac]/bestaudio[abr>=256]',
+            };
+            formatSelector = bitrateMap[quality] || 'bestaudio/best';
+            extension = quality.split('-')[0] || 'mp3';
+            filename = `audio_${quality}`;
+        } else if (mode === 'video') {
+            const height = parseInt(quality);
+            if (isNaN(height)) {
+                return res.status(400).json({ error: 'Invalid quality value' });
+            }
+            formatSelector = `bestvideo[height<=${height}]`;
+            extension = 'mp4';
+            filename = `video_${quality}p`;
+        } else {
+            const height = parseInt(quality);
+            if (isNaN(height)) {
+                return res.status(400).json({ error: 'Invalid quality value' });
+            }
+            formatSelector = `bestvideo[height<=${height}][ext=mp4]+bestaudio[ext=m4a]/best[height<=${height}]`;
+            extension = 'mp4';
+            filename = `full_${quality}p`;
+        }
         
-        res.setHeader('Content-Length', stat.size);
+        const tempId = Date.now();
+        const outputFile = path.join(__dirname, 'downloads', `${filename}_${tempId}.${extension}`);
+        
+        if (!fs.existsSync('downloads')) {
+            fs.mkdirSync('downloads');
+        }
+        
+        let command = `yt-dlp -f "${formatSelector}" -o "${outputFile}" "${url}"`;
+        
+        if (mode === 'audio') {
+            const codec = quality.split('-')[0];
+            if (codec === 'mp3') {
+                command = `yt-dlp -f bestaudio -x --audio-format mp3 --audio-quality 0 -o "${outputFile}" "${url}"`;
+            } else if (codec === 'm4a') {
+                command = `yt-dlp -f bestaudio -x --audio-format m4a --audio-quality 0 -o "${outputFile}" "${url}"`;
+            } else if (codec === 'aac') {
+                command = `yt-dlp -f bestaudio -x --audio-format aac --audio-quality 0 -o "${outputFile}" "${url}"`;
+            }
+        }
+        
+        // Add PO Token if available
+        const potProviderPath = '/pot-provider/server/dist/index.js';
+        if (fs.existsSync(potProviderPath)) {
+            command = command.replace(
+                'yt-dlp',
+                `yt-dlp --po-token-provider "node ${potProviderPath}"`
+            );
+        }
+        
+        await runCommand(command);
+        
+        let actualFile = outputFile;
+        if (!fs.existsSync(actualFile)) {
+            const possibleExtensions = ['.mp3', '.m4a', '.aac', '.mp4'];
+            for (const ext of possibleExtensions) {
+                const testFile = outputFile.replace(path.extname(outputFile), ext);
+                if (fs.existsSync(testFile)) {
+                    actualFile = testFile;
+                    break;
+                }
+            }
+        }
+        
+        if (!fs.existsSync(actualFile)) {
+            throw new Error('Downloaded file not found');
+        }
+        
+        const stat = fs.statSync(actualFile);
+        const fileSize = stat.size;
+        
+        res.setHeader('Content-Length', fileSize);
         res.setHeader('Content-Type', 'video/mp4');
-        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.setHeader('Content-Disposition', `attachment; filename="${path.basename(actualFile)}"`);
         
-        const fileStream = fs.createReadStream(outputFile);
+        const fileStream = fs.createReadStream(actualFile);
         fileStream.pipe(res);
         
         fileStream.on('end', () => {
             setTimeout(() => {
                 try {
-                    fs.unlinkSync(outputFile);
-                    console.log('🗑️ Deleted:', outputFile);
+                    fs.unlinkSync(actualFile);
+                    console.log('🗑️ Deleted:', actualFile);
                 } catch (err) {}
             }, 5000);
         });
@@ -186,17 +224,6 @@ app.post('/api/download', async (req, res) => {
     }
 });
 
-// ─── Serve frontend ───
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
-// ─── Health check ───
-app.get('/health', (req, res) => {
-    res.json({ status: 'OK', message: 'YouTube Downloader is running with ytagent!' });
-});
-
 app.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);
-    console.log(`🌐 Open: http://localhost:${PORT}`);
 });
