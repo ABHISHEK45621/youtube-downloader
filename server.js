@@ -13,17 +13,6 @@ app.use(express.static('public'));
 
 console.log('🚀 Starting YouTube Downloader...');
 
-// ─── Check if cookies.txt exists ───
-const COOKIES_FILE = path.join(__dirname, 'cookies.txt');
-const hasCookies = fs.existsSync(COOKIES_FILE);
-
-if (hasCookies) {
-    console.log('✅ Cookies file found!');
-    console.log('📄 Size:', fs.statSync(COOKIES_FILE).size, 'bytes');
-} else {
-    console.log('⚠️ No cookies.txt found. Will try without cookies.');
-}
-
 // ─── Helper: Run command ───
 function runCommand(command) {
     return new Promise((resolve, reject) => {
@@ -47,7 +36,7 @@ function runCommand(command) {
     });
 }
 
-// ─── API: Get Video Info (Tries 5 different methods) ───
+// ─── API: Get Video Info ───
 app.post('/api/info', async (req, res) => {
     try {
         const { url } = req.body;
@@ -57,15 +46,18 @@ app.post('/api/info', async (req, res) => {
         
         console.log('📥 Fetching URL:', url);
         
-        // Method 1: Try with cookies
-        if (hasCookies) {
+        // Try multiple clients
+        const clients = ['android', 'web_embedded', 'ios', 'android_embedded'];
+        let lastError = null;
+        
+        for (const client of clients) {
             try {
-                console.log('🔄 Method 1: Trying with cookies...');
-                const command = `yt-dlp --cookies "${COOKIES_FILE}" -j --no-warnings "${url}"`;
+                console.log(`🔄 Trying client: ${client}`);
+                const command = `yt-dlp --extractor-args "youtube:player_client=${client}" -j --no-warnings "${url}"`;
                 const output = await runCommand(command);
                 const data = JSON.parse(output);
                 
-                console.log('✅ Video found with cookies:', data.title);
+                console.log(`✅ Video found with client ${client}:`, data.title);
                 return res.json({
                     id: data.id,
                     title: data.title || 'Untitled',
@@ -75,91 +67,12 @@ app.post('/api/info', async (req, res) => {
                     thumbnail: data.thumbnail || '',
                 });
             } catch (error) {
-                console.log('⚠️ Cookies method failed');
+                lastError = error;
+                console.log(`⚠️ Client ${client} failed`);
             }
         }
         
-        // Method 2: Android client
-        try {
-            console.log('🔄 Method 2: Trying android client...');
-            const command = `yt-dlp --extractor-args "youtube:player_client=android" -j --no-warnings "${url}"`;
-            const output = await runCommand(command);
-            const data = JSON.parse(output);
-            
-            console.log('✅ Video found with android client:', data.title);
-            return res.json({
-                id: data.id,
-                title: data.title || 'Untitled',
-                channel: data.uploader || 'Unknown',
-                duration: data.duration || 0,
-                views: data.view_count || 0,
-                thumbnail: data.thumbnail || '',
-            });
-        } catch (error) {
-            console.log('⚠️ Android client failed');
-        }
-        
-        // Method 3: Web embedded client
-        try {
-            console.log('🔄 Method 3: Trying web_embedded client...');
-            const command = `yt-dlp --extractor-args "youtube:player_client=web_embedded" -j --no-warnings "${url}"`;
-            const output = await runCommand(command);
-            const data = JSON.parse(output);
-            
-            console.log('✅ Video found with web_embedded client:', data.title);
-            return res.json({
-                id: data.id,
-                title: data.title || 'Untitled',
-                channel: data.uploader || 'Unknown',
-                duration: data.duration || 0,
-                views: data.view_count || 0,
-                thumbnail: data.thumbnail || '',
-            });
-        } catch (error) {
-            console.log('⚠️ Web_embedded client failed');
-        }
-        
-        // Method 4: iOS client
-        try {
-            console.log('🔄 Method 4: Trying ios client...');
-            const command = `yt-dlp --extractor-args "youtube:player_client=ios" -j --no-warnings "${url}"`;
-            const output = await runCommand(command);
-            const data = JSON.parse(output);
-            
-            console.log('✅ Video found with ios client:', data.title);
-            return res.json({
-                id: data.id,
-                title: data.title || 'Untitled',
-                channel: data.uploader || 'Unknown',
-                duration: data.duration || 0,
-                views: data.view_count || 0,
-                thumbnail: data.thumbnail || '',
-            });
-        } catch (error) {
-            console.log('⚠️ iOS client failed');
-        }
-        
-        // Method 5: TV embedded client (last resort)
-        try {
-            console.log('🔄 Method 5: Trying tv_embedded client...');
-            const command = `yt-dlp --extractor-args "youtube:player_client=tv_embedded" -j --no-warnings "${url}"`;
-            const output = await runCommand(command);
-            const data = JSON.parse(output);
-            
-            console.log('✅ Video found with tv_embedded client:', data.title);
-            return res.json({
-                id: data.id,
-                title: data.title || 'Untitled',
-                channel: data.uploader || 'Unknown',
-                duration: data.duration || 0,
-                views: data.view_count || 0,
-                thumbnail: data.thumbnail || '',
-            });
-        } catch (error) {
-            console.log('⚠️ All methods failed');
-        }
-        
-        throw new Error('Unable to fetch video info. YouTube may be blocking this server.');
+        throw new Error('All clients failed. ' + (lastError ? lastError.message : ''));
         
     } catch (error) {
         console.error('❌ Error details:', error.message);
@@ -232,11 +145,6 @@ app.post('/api/download', async (req, res) => {
             } else if (codec === 'aac') {
                 command = `yt-dlp -f bestaudio -x --audio-format aac --audio-quality 0 -o "${outputFile}" "${url}"`;
             }
-        }
-        
-        // Add cookies if available
-        if (hasCookies) {
-            command = command.replace('yt-dlp', `yt-dlp --cookies "${COOKIES_FILE}"`);
         }
         
         await runCommand(command);
