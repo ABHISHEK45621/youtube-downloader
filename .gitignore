@@ -1,0 +1,32 @@
+# Node.js dependencies
+node_modules/
+
+# Downloaded videos (temporary)
+downloads/
+
+# YouTube cookies (CONTAINS YOUR LOGIN SESSION - NEVER UPLOAD!)
+cookies.txt
+
+# Environment variables (secrets)
+.env
+
+# Log files
+*.log
+
+# macOS system files
+.DS_Store
+
+# Windows system files
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+
+# Package lock files
+package-lock.json
+yarn.lock
+
+# Temporary files
+*.tmp
+*.temp
