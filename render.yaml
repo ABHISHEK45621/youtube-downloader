@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: youtube-downloader
+    runtime: node
+    repo: https://github.com/ABHISHEK45621/youtube-downloader
+    plan: free
+    envVars:
+      - key: NODE_VERSION
+        value: 18
+    buildCommand: |
+      apt-get update
+      apt-get install -y python3 python3-pip ffmpeg
+      pip3 install yt-dlp
+      npm install
+    startCommand: node server.js
