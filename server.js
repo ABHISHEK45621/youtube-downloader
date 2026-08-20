@@ -19,6 +19,7 @@ const hasCookies = fs.existsSync(COOKIES_FILE);
 
 if (hasCookies) {
     console.log('✅ Cookies file found!');
+    console.log('📄 Size:', fs.statSync(COOKIES_FILE).size, 'bytes');
 } else {
     console.log('⚠️ No cookies.txt found. Will try without cookies.');
 }
@@ -46,7 +47,7 @@ function runCommand(command) {
     });
 }
 
-// ─── API: Get Video Info (Tries Multiple Methods) ───
+// ─── API: Get Video Info (Tries 5 different methods) ───
 app.post('/api/info', async (req, res) => {
     try {
         const { url } = req.body;
@@ -56,7 +57,7 @@ app.post('/api/info', async (req, res) => {
         
         console.log('📥 Fetching URL:', url);
         
-        // Method 1: Try with cookies (if available)
+        // Method 1: Try with cookies
         if (hasCookies) {
             try {
                 console.log('🔄 Method 1: Trying with cookies...');
@@ -65,7 +66,7 @@ app.post('/api/info', async (req, res) => {
                 const data = JSON.parse(output);
                 
                 console.log('✅ Video found with cookies:', data.title);
-                res.json({
+                return res.json({
                     id: data.id,
                     title: data.title || 'Untitled',
                     channel: data.uploader || 'Unknown',
@@ -73,21 +74,20 @@ app.post('/api/info', async (req, res) => {
                     views: data.view_count || 0,
                     thumbnail: data.thumbnail || '',
                 });
-                return;
             } catch (error) {
-                console.log('⚠️ Cookies method failed, trying without...');
+                console.log('⚠️ Cookies method failed');
             }
         }
         
-        // Method 2: Try with android client (no cookies)
+        // Method 2: Android client
         try {
-            console.log('🔄 Method 2: Trying with android client...');
+            console.log('🔄 Method 2: Trying android client...');
             const command = `yt-dlp --extractor-args "youtube:player_client=android" -j --no-warnings "${url}"`;
             const output = await runCommand(command);
             const data = JSON.parse(output);
             
             console.log('✅ Video found with android client:', data.title);
-            res.json({
+            return res.json({
                 id: data.id,
                 title: data.title || 'Untitled',
                 channel: data.uploader || 'Unknown',
@@ -95,20 +95,19 @@ app.post('/api/info', async (req, res) => {
                 views: data.view_count || 0,
                 thumbnail: data.thumbnail || '',
             });
-            return;
         } catch (error) {
-            console.log('⚠️ Android client failed, trying web_embedded...');
+            console.log('⚠️ Android client failed');
         }
         
-        // Method 3: Try with web_embedded client
+        // Method 3: Web embedded client
         try {
-            console.log('🔄 Method 3: Trying with web_embedded client...');
+            console.log('🔄 Method 3: Trying web_embedded client...');
             const command = `yt-dlp --extractor-args "youtube:player_client=web_embedded" -j --no-warnings "${url}"`;
             const output = await runCommand(command);
             const data = JSON.parse(output);
             
             console.log('✅ Video found with web_embedded client:', data.title);
-            res.json({
+            return res.json({
                 id: data.id,
                 title: data.title || 'Untitled',
                 channel: data.uploader || 'Unknown',
@@ -116,20 +115,19 @@ app.post('/api/info', async (req, res) => {
                 views: data.view_count || 0,
                 thumbnail: data.thumbnail || '',
             });
-            return;
         } catch (error) {
-            console.log('⚠️ All clients failed');
+            console.log('⚠️ Web_embedded client failed');
         }
         
-        // Method 4: Try with iOS client
+        // Method 4: iOS client
         try {
-            console.log('🔄 Method 4: Trying with ios client...');
+            console.log('🔄 Method 4: Trying ios client...');
             const command = `yt-dlp --extractor-args "youtube:player_client=ios" -j --no-warnings "${url}"`;
             const output = await runCommand(command);
             const data = JSON.parse(output);
             
             console.log('✅ Video found with ios client:', data.title);
-            res.json({
+            return res.json({
                 id: data.id,
                 title: data.title || 'Untitled',
                 channel: data.uploader || 'Unknown',
@@ -137,7 +135,26 @@ app.post('/api/info', async (req, res) => {
                 views: data.view_count || 0,
                 thumbnail: data.thumbnail || '',
             });
-            return;
+        } catch (error) {
+            console.log('⚠️ iOS client failed');
+        }
+        
+        // Method 5: TV embedded client (last resort)
+        try {
+            console.log('🔄 Method 5: Trying tv_embedded client...');
+            const command = `yt-dlp --extractor-args "youtube:player_client=tv_embedded" -j --no-warnings "${url}"`;
+            const output = await runCommand(command);
+            const data = JSON.parse(output);
+            
+            console.log('✅ Video found with tv_embedded client:', data.title);
+            return res.json({
+                id: data.id,
+                title: data.title || 'Untitled',
+                channel: data.uploader || 'Unknown',
+                duration: data.duration || 0,
+                views: data.view_count || 0,
+                thumbnail: data.thumbnail || '',
+            });
         } catch (error) {
             console.log('⚠️ All methods failed');
         }
