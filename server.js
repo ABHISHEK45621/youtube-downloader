@@ -13,25 +13,22 @@ app.use(express.static('public'));
 
 console.log('🚀 Starting YouTube Downloader...');
 
-// ─── Helper: Run command with PO Token support ───
+// ─── Check if cookies.txt exists ───
+const COOKIES_FILE = path.join(__dirname, 'cookies.txt');
+const hasCookies = fs.existsSync(COOKIES_FILE);
+
+if (hasCookies) {
+    console.log('✅ Cookies file found!');
+} else {
+    console.log('⚠️ No cookies.txt found. Will try without cookies.');
+}
+
+// ─── Helper: Run command ───
 function runCommand(command) {
     return new Promise((resolve, reject) => {
-        // Add PO Token provider if available
-        const potProviderPath = '/pot-provider/server/dist/index.js';
-        let fullCommand = command;
+        console.log('▶️ Running:', command);
         
-        // Check if PO Token provider exists
-        if (fs.existsSync(potProviderPath)) {
-            fullCommand = command.replace(
-                'yt-dlp',
-                `yt-dlp --po-token-provider "node ${potProviderPath}"`
-            );
-            console.log('✅ Using PO Token provider');
-        }
-        
-        console.log('▶️ Running:', fullCommand);
-        
-        exec(fullCommand, { 
+        exec(command, { 
             maxBuffer: 1024 * 1024 * 50, 
             timeout: 180000 
         }, (error, stdout, stderr) => {
@@ -49,7 +46,7 @@ function runCommand(command) {
     });
 }
 
-// ─── API: Get Video Info ───
+// ─── API: Get Video Info (Tries Multiple Methods) ───
 app.post('/api/info', async (req, res) => {
     try {
         const { url } = req.body;
@@ -59,12 +56,37 @@ app.post('/api/info', async (req, res) => {
         
         console.log('📥 Fetching URL:', url);
         
-        // Try with PO Token first
+        // Method 1: Try with cookies (if available)
+        if (hasCookies) {
+            try {
+                console.log('🔄 Method 1: Trying with cookies...');
+                const command = `yt-dlp --cookies "${COOKIES_FILE}" -j --no-warnings "${url}"`;
+                const output = await runCommand(command);
+                const data = JSON.parse(output);
+                
+                console.log('✅ Video found with cookies:', data.title);
+                res.json({
+                    id: data.id,
+                    title: data.title || 'Untitled',
+                    channel: data.uploader || 'Unknown',
+                    duration: data.duration || 0,
+                    views: data.view_count || 0,
+                    thumbnail: data.thumbnail || '',
+                });
+                return;
+            } catch (error) {
+                console.log('⚠️ Cookies method failed, trying without...');
+            }
+        }
+        
+        // Method 2: Try with android client (no cookies)
         try {
-            const output = await runCommand(`yt-dlp -j --no-warnings "${url}"`);
+            console.log('🔄 Method 2: Trying with android client...');
+            const command = `yt-dlp --extractor-args "youtube:player_client=android" -j --no-warnings "${url}"`;
+            const output = await runCommand(command);
             const data = JSON.parse(output);
             
-            console.log('✅ Video found:', data.title);
+            console.log('✅ Video found with android client:', data.title);
             res.json({
                 id: data.id,
                 title: data.title || 'Untitled',
@@ -74,16 +96,18 @@ app.post('/api/info', async (req, res) => {
                 thumbnail: data.thumbnail || '',
             });
             return;
-        } catch (poError) {
-            console.log('⚠️ PO Token failed, trying without...');
+        } catch (error) {
+            console.log('⚠️ Android client failed, trying web_embedded...');
         }
         
-        // Fallback: Try without PO Token
+        // Method 3: Try with web_embedded client
         try {
-            const output = await runCommand(`yt-dlp --extractor-args "youtube:player_client=android" -j --no-warnings "${url}"`);
+            console.log('🔄 Method 3: Trying with web_embedded client...');
+            const command = `yt-dlp --extractor-args "youtube:player_client=web_embedded" -j --no-warnings "${url}"`;
+            const output = await runCommand(command);
             const data = JSON.parse(output);
             
-            console.log('✅ Video found (fallback):', data.title);
+            console.log('✅ Video found with web_embedded client:', data.title);
             res.json({
                 id: data.id,
                 title: data.title || 'Untitled',
@@ -92,10 +116,33 @@ app.post('/api/info', async (req, res) => {
                 views: data.view_count || 0,
                 thumbnail: data.thumbnail || '',
             });
-        } catch (fallbackError) {
-            console.error('❌ All methods failed');
-            throw new Error('Could not fetch video info. YouTube may be blocking this server.');
+            return;
+        } catch (error) {
+            console.log('⚠️ All clients failed');
         }
+        
+        // Method 4: Try with iOS client
+        try {
+            console.log('🔄 Method 4: Trying with ios client...');
+            const command = `yt-dlp --extractor-args "youtube:player_client=ios" -j --no-warnings "${url}"`;
+            const output = await runCommand(command);
+            const data = JSON.parse(output);
+            
+            console.log('✅ Video found with ios client:', data.title);
+            res.json({
+                id: data.id,
+                title: data.title || 'Untitled',
+                channel: data.uploader || 'Unknown',
+                duration: data.duration || 0,
+                views: data.view_count || 0,
+                thumbnail: data.thumbnail || '',
+            });
+            return;
+        } catch (error) {
+            console.log('⚠️ All methods failed');
+        }
+        
+        throw new Error('Unable to fetch video info. YouTube may be blocking this server.');
         
     } catch (error) {
         console.error('❌ Error details:', error.message);
@@ -170,13 +217,9 @@ app.post('/api/download', async (req, res) => {
             }
         }
         
-        // Add PO Token if available
-        const potProviderPath = '/pot-provider/server/dist/index.js';
-        if (fs.existsSync(potProviderPath)) {
-            command = command.replace(
-                'yt-dlp',
-                `yt-dlp --po-token-provider "node ${potProviderPath}"`
-            );
+        // Add cookies if available
+        if (hasCookies) {
+            command = command.replace('yt-dlp', `yt-dlp --cookies "${COOKIES_FILE}"`);
         }
         
         await runCommand(command);
