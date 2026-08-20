@@ -11,39 +11,26 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
-// ─── Check for cookies file ───
-const COOKIES_FILE = path.join(__dirname, 'cookies.txt');
-const hasCookies = fs.existsSync(COOKIES_FILE);
-
-console.log(`📁 Cookies file: ${COOKIES_FILE}`);
-console.log(`✅ Has cookies: ${hasCookies}`);
-
-if (hasCookies) {
-    console.log('✅ Cookies found! Size:', fs.statSync(COOKIES_FILE).size, 'bytes');
-    // Read first few lines to verify
-    const content = fs.readFileSync(COOKIES_FILE, 'utf8');
-    console.log('📄 First 100 chars of cookies:', content.substring(0, 100));
-} else {
-    console.log('❌ NO cookies file found!');
-}
-
-// ─── Helper function with COOKIES ───
-function runCommand(command) {
+// ─── Helper function with MULTIPLE FALLBACKS ───
+function runCommand(command, useCookies = false) {
     return new Promise((resolve, reject) => {
+        // Don't use cookies - try different approaches
         let fullCommand = command;
         
-        // Add cookies if available
-        if (hasCookies) {
-            // Use cookies + delay for best results
+        // Try with different player clients (no cookies needed)
+        if (command.includes('yt-dlp -j')) {
+            // Try these clients in order: android, web_embedded, ios
+            const clients = ['android', 'web_embedded', 'ios'];
+            const client = clients[Math.floor(Math.random() * clients.length)];
             fullCommand = command.replace(
-                'yt-dlp',
-                `yt-dlp --cookies "${COOKIES_FILE}" --sleep-interval 2 --max-sleep-interval 5`
+                'yt-dlp -j',
+                `yt-dlp --extractor-args "youtube:player_client=${client}" -j`
             );
-        } else {
-            // Fallback to delay method only
+        } else if (command.includes('yt-dlp -f')) {
+            // For downloads, use android client
             fullCommand = command.replace(
-                'yt-dlp',
-                'yt-dlp --sleep-interval 5 --max-sleep-interval 10 --sleep-requests 1'
+                'yt-dlp -f',
+                `yt-dlp --extractor-args "youtube:player_client=android" -f`
             );
         }
         
@@ -60,7 +47,7 @@ function runCommand(command) {
                 return;
             }
             if (stderr) {
-                console.log('⚠️ stderr (non-critical):', stderr);
+                console.log('⚠️ stderr:', stderr);
             }
             resolve(stdout);
         });
@@ -76,10 +63,14 @@ app.post('/api/info', async (req, res) => {
         }
         
         console.log('📥 Fetching URL:', url);
-        const output = await runCommand(`yt-dlp -j --no-warnings "${url}"`);
-        const data = JSON.parse(output);
         
+        // Try WITHOUT cookies using android client
+        const output = await runCommand(`yt-dlp -j --no-warnings "${url}"`);
+        console.log('✅ yt-dlp output received');
+        
+        const data = JSON.parse(output);
         console.log('✅ Video found:', data.title);
+        
         res.json({
             id: data.id,
             title: data.title || 'Untitled',
@@ -161,13 +152,11 @@ app.post('/api/download', async (req, res) => {
             }
         }
         
-        // Add cookies to command
-        if (hasCookies) {
-            command = command.replace(
-                'yt-dlp',
-                `yt-dlp --cookies "${COOKIES_FILE}"`
-            );
-        }
+        // Use android client for downloads
+        command = command.replace(
+            'yt-dlp',
+            `yt-dlp --extractor-args "youtube:player_client=android"`
+        );
         
         await runCommand(command);
         
@@ -213,18 +202,6 @@ app.post('/api/download', async (req, res) => {
     }
 });
 
-// ─── API: Check cookie status ───
-app.get('/api/cookie-status', (req, res) => {
-    res.json({
-        hasCookies: hasCookies,
-        message: hasCookies ? 
-            '✅ Cookies loaded - YouTube requests will be authenticated' : 
-            '⚠️ No cookies found. Please add cookies.txt'
-    });
-});
-
 app.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);
-    console.log(`✅ Has cookies: ${hasCookies}`);
-    console.log(`📁 Cookies file: ${COOKIES_FILE}`);
 });
