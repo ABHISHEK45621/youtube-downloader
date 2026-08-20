@@ -1,6 +1,6 @@
 FROM node:18-slim
 
-# Install Python, pip, and ytagent
+# Install Python, pip, ffmpeg, and yt-dlp
 RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
@@ -8,11 +8,11 @@ RUN apt-get update && apt-get install -y \
     wget \
     git \
     && pip3 install --upgrade pip \
-    && pip3 install ytagent-cli \
+    && pip3 install yt-dlp \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Install PO Token Provider (needed for ytagent)
+# Install PO Token Provider (bypasses bot detection)
 RUN git clone https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git /pot-provider \
     && cd /pot-provider/server \
     && npm install \
